@@ -9,11 +9,36 @@ const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = 100; // Max requests per window
 
+// Maximum request size (10 MB)
+const MAX_REQUEST_SIZE = 10 * 1024 * 1024;
+
+/**
+ * Utility to get safe client IP
+ */
+function getClientIp(request: NextRequest): string {
+  const xForwardedFor = request.headers.get('x-forwarded-for');
+  if (xForwardedFor) {
+    return xForwardedFor.split(',')[0].trim();
+  }
+  return request.headers.get('x-real-ip') || 'unknown';
+}
+
 export function middleware(request: NextRequest) {
   // Get client IP from headers
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0] || 
-             request.headers.get('x-real-ip') || 
-             'unknown';
+  const ip = getClientIp(request);
+  // Check request size
+  const contentLength = request.headers.get('content-length');
+  if (contentLength) {
+    const size = parseInt(contentLength, 10);
+    if (!isNaN(size) && size > MAX_REQUEST_SIZE) {
+      return new NextResponse('Request Payload Too Large', {
+        status: 413,
+        headers: {
+          'Content-Type': 'text/plain',
+        },
+      });
+    }
+  }
   
   // Rate limiting logic
   const now = Date.now();
